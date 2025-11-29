@@ -1,6 +1,6 @@
 import os
 import uuid
-from io import BytesIO
+import re
 
 from flask import (
     Flask, render_template, request,
@@ -54,44 +54,53 @@ LABELS = {
 }
 
 # ==========================
-#     СУПЕР-УСКОРЕННЫЙ ИНФЕРЕНС
+#  АВТОМАТИЧЕСКАЯ НОРМАЛИЗАЦИЯ
+# ==========================
+
+def normalize_text(text: str) -> str:
+    """
+    Простая нормализация текста:
+    - приводим к строке
+    - убираем лишние пробелы
+    - можем добавить доп. шаги (лемматизация и т.п., если понадобится)
+    """
+    text = str(text)
+    text = re.sub(r"\s+", " ", text)
+    text = text.strip()
+    return text
+
+# ==========================
+#     УСКОРЕННЫЙ ИНФЕРЕНС
 # ==========================
 
 def predict_batch(texts, batch_size=128):
     """
-    Ультра-быстрый инференс.
-    - Большие батчи (128)
-    - max_length 128 (вместо 256)
-    - Параллельная токенизация
-    - Полный прогресс-бар
+    Быстрый батчевый инференс:
+    - батчи по 128
+    - max_length = 128
+    - работа на GPU, если есть
     """
     all_preds = []
-    encoded_batches = []
 
-    # -------- Токенизация --------
-    print("⌛ Токенизация...")
-    for i in tqdm(range(0, len(texts), batch_size), desc="Tokenizing", ncols=80):
+    print("⌛ Токенизация и инференс...")
+    for i in tqdm(range(0, len(texts), batch_size), desc="Model", ncols=80):
         batch = texts[i:i + batch_size]
+
         enc = tokenizer(
             batch,
             truncation=True,
             padding=True,
             max_length=128,
             return_tensors="pt"
-        )
-        encoded_batches.append(enc)
+        ).to(device)
 
-    # -------- МОДЕЛЬ --------
-    print("🔥 Инференс модели...")
-    for enc in tqdm(encoded_batches, desc="Model", ncols=80):
-        enc = {k: v.to(device) for k, v in enc.items()}
+        with torch.no_grad():
+            logits = model(**enc).logits
 
-        logits = model(**enc).logits
         preds = logits.argmax(dim=1).cpu().numpy()
         all_preds.extend(preds)
 
     return all_preds
-
 
 # ==========================
 #           ROUTES
@@ -99,11 +108,21 @@ def predict_batch(texts, batch_size=128):
 
 @app.route("/")
 def index():
+    # шаблон index.html уже есть
     return render_template("index.html")
 
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    """
+    Обработка тестового CSV:
+    - колонка text (обязательно)
+    - src (опционально)
+    Результат:
+    - полный размеченный CSV
+    - submission.csv (id,label)
+    - страница с таблицей и визуализациями
+    """
     if 'file' not in request.files:
         flash("Файл не найден.")
         return redirect(url_for("index"))
@@ -120,30 +139,53 @@ def analyze():
         return redirect(url_for("index"))
 
     if 'text' not in df.columns:
-        flash("В CSV должна быть колонка text.")
+        flash("В CSV должна быть колонка 'text'.")
         return redirect(url_for("index"))
 
-    texts = df['text'].astype(str).tolist()
+    # Нормализация текста
+    df['text_norm'] = df['text'].apply(normalize_text)
+    texts = df['text_norm'].astype(str).tolist()
 
     print(f"📄 Загружено строк: {len(texts)}")
     print("🚀 Запускаем классификацию...")
 
     preds = predict_batch(texts)
 
-    print("✅ Готово!")
+    print("✅ Классификация завершена")
 
     df['pred'] = preds
     df['label_name'] = df['pred'].map(LABELS)
 
+    # Если есть src — используем, если нет — ставим 'unknown'
     if 'src' not in df.columns:
         df['src'] = 'unknown'
 
+    # Статистика по классам для визуализации
     counts = df['label_name'].value_counts().to_dict()
 
+    # Генерим уникальный ID для файлов
     file_id = str(uuid.uuid4())
-    out_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.csv")
-    df.to_csv(out_path, index=False, encoding="utf-8")
 
+    # Полный размеченный CSV
+    full_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.csv")
+    df.to_csv(full_path, index=False, encoding="utf-8")
+
+    # Submission CSV (формат id,label)
+    if 'id' in df.columns:
+        sub_df = pd.DataFrame({
+            "id": df["id"],
+            "label": df["pred"]
+        })
+    else:
+        sub_df = pd.DataFrame({
+            "id": range(len(df)),
+            "label": df["pred"]
+        })
+
+    sub_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}_submission.csv")
+    sub_df.to_csv(sub_path, index=False, encoding="utf-8")
+
+    # Превью для таблицы
     preview_df = df.head(200)
 
     return render_template(
@@ -157,6 +199,9 @@ def analyze():
 
 @app.route("/download/<file_id>")
 def download(file_id):
+    """
+    Скачать полный размеченный CSV (text + pred + label_name + src).
+    """
     path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.csv")
     if not os.path.exists(path):
         flash("Файл не найден.")
@@ -170,8 +215,30 @@ def download(file_id):
     )
 
 
+@app.route("/submission/<file_id>")
+def submission(file_id):
+    """
+    Скачать submission.csv в формате id,label.
+    """
+    sub_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}_submission.csv")
+    if not os.path.exists(sub_path):
+        flash("Submission файл ещё не сформирован.")
+        return redirect(url_for("index"))
+
+    return send_file(
+        sub_path,
+        as_attachment=True,
+        download_name="submission.csv",
+        mimetype="text/csv"
+    )
+
+
 @app.route("/evaluate", methods=["POST"])
 def evaluate():
+    """
+    Оценка качества модели по macro-F1:
+    - ожидается CSV с колонками text и label (0,1,2)
+    """
     if 'file' not in request.files:
         flash("Файл не найден.")
         return redirect(url_for("index"))
@@ -188,10 +255,12 @@ def evaluate():
         return redirect(url_for("index"))
 
     if 'text' not in df.columns or 'label' not in df.columns:
-        flash("В CSV должны быть text и label.")
+        flash("В CSV должны быть колонки 'text' и 'label'.")
         return redirect(url_for("index"))
 
-    texts = df['text'].astype(str).tolist()
+    # Нормализация текста, как и при инференсе
+    df['text_norm'] = df['text'].apply(normalize_text)
+    texts = df['text_norm'].astype(str).tolist()
     true_labels = df['label'].tolist()
 
     print(f"📄 Строк для оценки: {len(texts)}")
