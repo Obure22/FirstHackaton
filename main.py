@@ -12,9 +12,9 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from sklearn.metrics import f1_score, classification_report
 from tqdm import tqdm
 
-# ==========================
-#        НАСТРОЙКИ
-# ==========================
+
+#НАСТРОЙКИ
+
 
 app = Flask(__name__)
 app.secret_key = "super-secret-key"
@@ -25,20 +25,20 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 torch.set_grad_enabled(False)
 
-# ==========================
-#       УСТРОЙСТВО
-# ==========================
+
+#УСТРОЙСТВО
+
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
-    print("🔥 Используем GPU")
+    print("Используем GPU")
 else:
     device = torch.device("cpu")
-    print("⚙️ GPU нет — работаем на CPU")
+    print("GPU нет — работаем на CPU")
 
-# ==========================
-#       ЗАГРУЗКА МОДЕЛИ
-# ==========================
+
+#ЗАГРУЗКА МОДЕЛИ
+
 
 MODEL_PATH = "model"
 
@@ -48,14 +48,14 @@ model.to(device)
 model.eval()
 
 LABELS = {
-    0: "Отрицательная",
-    1: "Нейтральная",
-    2: "Положительная"
+    0: "Нейтральная",
+    1: "Положительная",
+    2: "Негативная"
 }
 
-# ==========================
-#  АВТОМАТИЧЕСКАЯ НОРМАЛИЗАЦИЯ
-# ==========================
+
+#АВТОМАТИЧЕСКАЯ НОРМАЛИЗАЦИЯ
+
 
 def normalize_text(text: str) -> str:
     """
@@ -69,9 +69,9 @@ def normalize_text(text: str) -> str:
     text = text.strip()
     return text
 
-# ==========================
-#     УСКОРЕННЫЙ ИНФЕРЕНС
-# ==========================
+
+#УСКОРЕННЫЙ ИНФЕРЕНС
+
 
 def predict_batch(texts, batch_size=128):
     """
@@ -102,9 +102,9 @@ def predict_batch(texts, batch_size=128):
 
     return all_preds
 
-# ==========================
-#           ROUTES
-# ==========================
+
+#ROUTES
+
 
 @app.route("/")
 def index():
@@ -146,12 +146,12 @@ def analyze():
     df['text_norm'] = df['text'].apply(normalize_text)
     texts = df['text_norm'].astype(str).tolist()
 
-    print(f"📄 Загружено строк: {len(texts)}")
-    print("🚀 Запускаем классификацию...")
+    print(f"Загружено строк: {len(texts)}")
+    print("Запускаем классификацию...")
 
     preds = predict_batch(texts)
 
-    print("✅ Классификация завершена")
+    print("Классификация завершена")
 
     df['pred'] = preds
     df['label_name'] = df['pred'].map(LABELS)
@@ -263,8 +263,8 @@ def evaluate():
     texts = df['text_norm'].astype(str).tolist()
     true_labels = df['label'].tolist()
 
-    print(f"📄 Строк для оценки: {len(texts)}")
-    print("🚀 Предсказания для метрики...")
+    print(f"Строк для оценки: {len(texts)}")
+    print("Предсказания для метрики...")
 
     preds = predict_batch(texts)
 

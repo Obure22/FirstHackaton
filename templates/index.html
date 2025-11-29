@@ -18,7 +18,7 @@
 
 <section class="card">
     <h2>2. Оценка качества модели (macro-F1)</h2>
-    <p>Загрузите валидационный CSV с колонками <code>text</code> и <code>label</code> (0 — отрицательная, 1 — нейтральная, 2 — положительная).</p>
+    <p>Загрузите валидационный CSV с колонками <code>text</code> и <code>label</code> (0 — нейтральная, 1 — положительная, 2 — негативная).</p>
     <form action="{{ url_for('evaluate') }}" method="post" enctype="multipart/form-data">
         <input type="file" name="file" accept=".csv" required>
         <button type="submit">Посчитать macro-F1</button>
