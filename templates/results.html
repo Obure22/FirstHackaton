@@ -65,6 +65,7 @@
 </section>
 
 <script>
+document.addEventListener("DOMContentLoaded", function () {
     // --- данные для графика ---
     const labelsData = {{ labels_order | tojson }};
     const countsData = {{ counts | tojson }};
@@ -72,53 +73,65 @@
     const chartLabels = labelsData;
     const chartData = chartLabels.map(label => countsData[label] || 0);
 
-    const ctx = document.getElementById('sentimentChart').getContext('2d');
-    const sentimentChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: chartLabels,
-            datasets: [{
-                label: 'Количество отзывов',
-                data: chartData
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { precision: 0 }
+    const canvas = document.getElementById('sentimentChart');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Количество отзывов',
+                    data: chartData
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0 }
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     // --- фильтрация/поиск ---
     const searchInput = document.getElementById('searchInput');
     const sentimentFilter = document.getElementById('sentimentFilter');
-    const tableRows = document.querySelectorAll('#resultsTable tbody tr');
+    const tableBody = document.querySelector('#resultsTable tbody');
+    if (!searchInput || !sentimentFilter || !tableBody) {
+        console.warn("Фильтры не инициализированы: нет нужных элементов на странице.");
+        return;
+    }
+
+    const tableRows = Array.from(tableBody.querySelectorAll('tr'));
 
     function applyFilters() {
-        const query = searchInput.value.toLowerCase();
+        const query = searchInput.value.toLowerCase().trim();
         const sentiment = sentimentFilter.value;
 
         tableRows.forEach(row => {
-            const text = row.querySelector('.text-cell').innerText.toLowerCase();
+            const textCell = row.querySelector('.text-cell');
             const rowSentiment = row.getAttribute('data-sentiment');
+
+            const text = textCell ? textCell.innerText.toLowerCase() : "";
 
             const matchText = !query || text.includes(query);
             const matchSentiment = !sentiment || rowSentiment === sentiment;
 
-            if (matchText && matchSentiment) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
+            row.style.display = (matchText && matchSentiment) ? '' : 'none';
         });
     }
 
     searchInput.addEventListener('input', applyFilters);
     sentimentFilter.addEventListener('change', applyFilters);
+
+    // первый вызов — без фильтров
+    applyFilters();
+});
 </script>
+
 
 {% endblock %}
