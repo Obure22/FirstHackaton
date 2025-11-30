@@ -19,6 +19,8 @@
 
 Результаты в папке "Результаты"
 
+Версия python 3.12
+
 Список библиотек:
 - --index-url https://download.pytorch.org/whl/cpu
 - --extra-index-url https://pypi.org/simple
@@ -76,5 +78,11 @@
 ```
 
 Если потребуется ускорить, то можно заменить библиотеку torch на её gpu версию:
+
+```
 pip uninstall torch -y
+```
+
+```
 pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+```
